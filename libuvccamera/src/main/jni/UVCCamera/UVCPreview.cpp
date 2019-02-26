@@ -845,32 +845,35 @@ void UVCPreview::do_capture_surface(JNIEnv *env) {
  */
 void UVCPreview::do_capture_callback(JNIEnv *env, uvc_frame_t *frame) {
 	ENTER();
-
-	if (LIKELY(frame)) {
-		uvc_frame_t *callback_frame = frame;
-		if (mFrameCallbackObj) {
-			if (mFrameCallbackFunc) {
-				callback_frame = get_frame(callbackPixelBytes);
-				if (LIKELY(callback_frame)) {
-					int b = mFrameCallbackFunc(frame, callback_frame);
-					recycle_frame(frame);
-					if (UNLIKELY(b)) {
-						LOGW("failed to convert for callback frame");
-						goto SKIP;
-					}
-				} else {
-					LOGW("failed to allocate for callback frame");
-					callback_frame = frame;
-					goto SKIP;
-				}
-			}
-			jobject buf = env->NewDirectByteBuffer(callback_frame->data, callbackPixelBytes);
-			env->CallVoidMethod(mFrameCallbackObj, iframecallback_fields.onFrame, buf);
-			env->ExceptionClear();
-			env->DeleteLocalRef(buf);
-		}
- SKIP:
-		recycle_frame(callback_frame);
+    pthread_mutex_lock(&capture_mutex);
+	{
+        if (LIKELY(frame)) {
+            uvc_frame_t *callback_frame = frame;
+            if (mFrameCallbackObj) {
+                if (mFrameCallbackFunc) {
+                    callback_frame = get_frame(callbackPixelBytes);
+                    if (LIKELY(callback_frame)) {
+                        int b = mFrameCallbackFunc(frame, callback_frame);
+                        recycle_frame(frame);
+                        if (UNLIKELY(b)) {
+                            LOGW("failed to convert for callback frame");
+                            goto SKIP;
+                        }
+                    } else {
+                        LOGW("failed to allocate for callback frame");
+                        callback_frame = frame;
+                        goto SKIP;
+                    }
+                }
+                jobject buf = env->NewDirectByteBuffer(callback_frame->data, callbackPixelBytes);
+                env->CallVoidMethod(mFrameCallbackObj, iframecallback_fields.onFrame, buf);
+                env->ExceptionClear();
+                env->DeleteLocalRef(buf);
+            }
+     SKIP:
+            recycle_frame(callback_frame);
+        }
 	}
+	pthread_mutex_unlock(&capture_mutex);
 	EXIT();
 }
